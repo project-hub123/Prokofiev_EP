@@ -2,110 +2,92 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 
 # ============================================================
-# ОБРАТИМАЯ НЕЛИНЕЙНОСТЬ (S-BOX)
+# НАСТРОЙКИ
 # ============================================================
 
-SBOX = [(i * 73 + 41) % 256 for i in range(256)]
-INV_SBOX = [0] * 256
-for i, v in enumerate(SBOX):
-    INV_SBOX[v] = i
+BLOCK_SIZE = 8
+ROUNDS = 8
+
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+
+def pad(data: bytes) -> bytes:
+    pad_len = BLOCK_SIZE - (len(data) % BLOCK_SIZE)
+    return data + bytes([pad_len] * pad_len)
+
+def unpad(data: bytes) -> bytes:
+    pad_len = data[-1]
+    return data[:-pad_len]
+
+def xor_bytes(a, b):
+    return bytes(x ^ y for x, y in zip(a, b))
+
+def rotate_left(b: bytes, n: int):
+    return b[n:] + b[:n]
 
 # ============================================================
 # ГЕНЕРАЦИЯ ПОДКЛЮЧЕЙ
 # ============================================================
 
-def key_schedule(key: bytes, rounds=6):
-    k = list(key)
-    subkeys = []
-    for r in range(rounds):
-        subkeys.append([(k[i] + r) % 256 for i in range(8)])
-        k = k[1:] + k[:1]  # циклический сдвиг
-    return subkeys
+def key_schedule(key: bytes):
+    key = key.ljust(BLOCK_SIZE, b'\x00')[:BLOCK_SIZE]
+    keys = []
+    k = key
+    for _ in range(ROUNDS):
+        keys.append(k)
+        k = rotate_left(k, 1)
+    return keys
 
 # ============================================================
-# ОБРАТИМОЕ ПЕРЕМЕШИВАНИЕ
+# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА (FEISTEL)
 # ============================================================
 
-def mix(x):
-    return [
-        (x[0] + x[1]) % 256,
-        (x[1] + x[2]) % 256,
-        (x[2] + x[3]) % 256,
-        (x[3] + x[4]) % 256,
-        (x[4] + x[5]) % 256,
-        (x[5] + x[6]) % 256,
-        (x[6] + x[7]) % 256,
-        x[7]
-    ]
+def encrypt_block(block: bytes, subkeys):
+    left = block[:4]
+    right = block[4:]
 
-def inv_mix(x):
-    return [
-        (x[0] - x[1]) % 256,
-        (x[1] - x[2]) % 256,
-        (x[2] - x[3]) % 256,
-        (x[3] - x[4]) % 256,
-        (x[4] - x[5]) % 256,
-        (x[5] - x[6]) % 256,
-        (x[6] - x[7]) % 256,
-        x[7]
-    ]
-
-# ============================================================
-# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА
-# ============================================================
-
-def encrypt_block(block, subkeys):
-    x = block[:]
     for k in subkeys:
-        for i in range(8):
-            x[i] = (x[i] + k[i]) % 256
-        x = [SBOX[b] for b in x]
-        x = mix(x)
-    return x
+        f = xor_bytes(right, k[:4])
+        left, right = right, xor_bytes(left, f)
 
-def decrypt_block(block, subkeys):
-    x = block[:]
+    return left + right
+
+def decrypt_block(block: bytes, subkeys):
+    left = block[:4]
+    right = block[4:]
+
     for k in reversed(subkeys):
-        x = inv_mix(x)
-        x = [INV_SBOX[b] for b in x]
-        for i in range(8):
-            x[i] = (x[i] - k[i]) % 256
-    return x
+        f = xor_bytes(left, k[:4])
+        left, right = xor_bytes(right, f), left
+
+    return left + right
 
 # ============================================================
-# РАБОТА С ТЕКСТОМ
+# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ ТЕКСТА
 # ============================================================
-
-def pad(data: bytes):
-    while len(data) % 8 != 0:
-        data += b'\x00'
-    return data
 
 def encrypt(text: str, key: str) -> str:
-    key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
-    subkeys = key_schedule(key_b)
-
     data = pad(text.encode("utf-8"))
-    result = []
+    key_bytes = key.encode("utf-8")
+    subkeys = key_schedule(key_bytes)
 
-    for i in range(0, len(data), 8):
-        block = list(data[i:i+8])
-        result.extend(encrypt_block(block, subkeys))
+    out = b""
+    for i in range(0, len(data), BLOCK_SIZE):
+        out += encrypt_block(data[i:i+BLOCK_SIZE], subkeys)
 
-    return bytes(result).hex()
+    return out.hex()
 
 def decrypt(cipher_hex: str, key: str) -> str:
-    key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
-    subkeys = key_schedule(key_b)
-
     data = bytes.fromhex(cipher_hex)
-    result = []
+    key_bytes = key.encode("utf-8")
+    subkeys = key_schedule(key_bytes)
 
-    for i in range(0, len(data), 8):
-        block = list(data[i:i+8])
-        result.extend(decrypt_block(block, subkeys))
+    out = b""
+    for i in range(0, len(data), BLOCK_SIZE):
+        out += decrypt_block(data[i:i+BLOCK_SIZE], subkeys)
 
-    return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
+    return unpad(out).decode("utf-8", errors="ignore")
 
 # ============================================================
 # GUI
@@ -144,6 +126,7 @@ class SAFERApp:
             text = self.input_text.get("1.0", tk.END).rstrip()
             if not key or not text:
                 raise ValueError("Введите ключ и текст")
+
             self.enc_text.delete("1.0", tk.END)
             self.dec_text.delete("1.0", tk.END)
             self.enc_text.insert(tk.END, encrypt(text, key))
@@ -156,6 +139,7 @@ class SAFERApp:
             cipher = self.enc_text.get("1.0", tk.END).strip()
             if not key or not cipher:
                 raise ValueError("Введите ключ и зашифрованный текст")
+
             self.dec_text.delete("1.0", tk.END)
             self.dec_text.insert(tk.END, decrypt(cipher, key))
         except Exception as e:
