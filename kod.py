@@ -1,96 +1,81 @@
 # ============================================================
-# SAFER-K64 (УЧЕБНАЯ СТРОГО ОБРАТИМАЯ РЕАЛИЗАЦИЯ)
+# SAFER-K64 — УЧЕБНАЯ СТРОГО ОБРАТИМАЯ РЕАЛИЗАЦИЯ
 # Шифрование / Дешифрование + GUI (Tkinter)
 # ============================================================
 
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
-from typing import List
 
 # ============================================================
-# ОБРАТИМАЯ S-BOX (вместо EXP/LOG)
+# ОБРАТИМАЯ НЕЛИНЕЙНОСТЬ (S-BOX)
 # ============================================================
 
-SBOX = [(i * 197 + 123) % 256 for i in range(256)]
+SBOX = [(i * 73 + 41) % 256 for i in range(256)]
 INV_SBOX = [0] * 256
 for i, v in enumerate(SBOX):
     INV_SBOX[v] = i
-
 
 # ============================================================
 # ГЕНЕРАЦИЯ ПОДКЛЮЧЕЙ
 # ============================================================
 
-def rotate_left(b: List[int], n=3):
-    return b[n:] + b[:n]
-
-
 def key_schedule(key: bytes, rounds=6):
-    keys = []
     k = list(key)
-
+    subkeys = []
     for r in range(rounds):
-        keys.append([(k[i] + r) % 256 for i in range(8)])
-        k = rotate_left(k)
+        subkeys.append([(k[i] + r) % 256 for i in range(8)])
+        k = k[1:] + k[:1]  # циклический сдвиг
+    return subkeys
 
-    return keys
+# ============================================================
+# ОБРАТИМОЕ ПЕРЕМЕШИВАНИЕ
+# ============================================================
 
+def mix(x):
+    return [
+        (x[0] + x[1]) % 256,
+        (x[1] + x[2]) % 256,
+        (x[2] + x[3]) % 256,
+        (x[3] + x[4]) % 256,
+        (x[4] + x[5]) % 256,
+        (x[5] + x[6]) % 256,
+        (x[6] + x[7]) % 256,
+        x[7]
+    ]
+
+def inv_mix(x):
+    return [
+        (x[0] - x[1]) % 256,
+        (x[1] - x[2]) % 256,
+        (x[2] - x[3]) % 256,
+        (x[3] - x[4]) % 256,
+        (x[4] - x[5]) % 256,
+        (x[5] - x[6]) % 256,
+        (x[6] - x[7]) % 256,
+        x[7]
+    ]
 
 # ============================================================
 # ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА
 # ============================================================
 
-def encrypt_block(block: List[int], subkeys):
+def encrypt_block(block, subkeys):
     x = block[:]
-
     for k in subkeys:
-        # наложение ключа
         for i in range(8):
             x[i] = (x[i] + k[i]) % 256
-
-        # нелинейность
         x = [SBOX[b] for b in x]
-
-        # обратимое перемешивание
-        x = [
-            (x[0] + x[1]) % 256,
-            (x[1] + x[2]) % 256,
-            (x[2] + x[3]) % 256,
-            (x[3] + x[4]) % 256,
-            (x[4] + x[5]) % 256,
-            (x[5] + x[6]) % 256,
-            (x[6] + x[7]) % 256,
-            (x[7] + x[0]) % 256
-        ]
-
+        x = mix(x)
     return x
 
-
-def decrypt_block(block: List[int], subkeys):
+def decrypt_block(block, subkeys):
     x = block[:]
-
     for k in reversed(subkeys):
-        # обратное перемешивание
-        x = [
-            (x[7] - x[0]) % 256,
-            (x[0] - x[1]) % 256,
-            (x[1] - x[2]) % 256,
-            (x[2] - x[3]) % 256,
-            (x[3] - x[4]) % 256,
-            (x[4] - x[5]) % 256,
-            (x[5] - x[6]) % 256,
-            (x[6] - x[7]) % 256
-        ]
-
-        # обратная нелинейность
+        x = inv_mix(x)
         x = [INV_SBOX[b] for b in x]
-
-        # снятие ключа
         for i in range(8):
             x[i] = (x[i] - k[i]) % 256
-
     return x
-
 
 # ============================================================
 # РАБОТА С ТЕКСТОМ
@@ -101,7 +86,6 @@ def pad(data: bytes):
         data += b'\x00'
     return data
 
-
 def encrypt(text: str, key: str) -> str:
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
     subkeys = key_schedule(key_b)
@@ -110,10 +94,10 @@ def encrypt(text: str, key: str) -> str:
     result = []
 
     for i in range(0, len(data), 8):
-        result.extend(encrypt_block(list(data[i:i + 8]), subkeys))
+        block = list(data[i:i+8])
+        result.extend(encrypt_block(block, subkeys))
 
     return bytes(result).hex()
-
 
 def decrypt(cipher_hex: str, key: str) -> str:
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
@@ -123,13 +107,13 @@ def decrypt(cipher_hex: str, key: str) -> str:
     result = []
 
     for i in range(0, len(data), 8):
-        result.extend(decrypt_block(list(data[i:i + 8]), subkeys))
+        block = list(data[i:i+8])
+        result.extend(decrypt_block(block, subkeys))
 
     return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
 
-
 # ============================================================
-# GUI (ВСТАВКА ВО ВСЕ ПОЛЯ РАЗРЕШЕНА)
+# GUI
 # ============================================================
 
 class SAFERApp:
@@ -161,33 +145,26 @@ class SAFERApp:
 
     def encrypt(self):
         try:
-            self.enc_text.delete("1.0", tk.END)
-            self.dec_text.delete("1.0", tk.END)
-
             key = self.key_entry.get()
             text = self.input_text.get("1.0", tk.END).rstrip()
-
             if not key or not text:
-                raise ValueError("Ключ и текст должны быть заполнены")
-
+                raise ValueError("Введите ключ и текст")
+            self.enc_text.delete("1.0", tk.END)
+            self.dec_text.delete("1.0", tk.END)
             self.enc_text.insert(tk.END, encrypt(text, key))
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
     def decrypt(self):
         try:
-            self.dec_text.delete("1.0", tk.END)
-
             key = self.key_entry.get()
             cipher = self.enc_text.get("1.0", tk.END).strip()
-
             if not key or not cipher:
-                raise ValueError("Ключ и зашифрованный текст должны быть заполнены")
-
+                raise ValueError("Введите ключ и зашифрованный текст")
+            self.dec_text.delete("1.0", tk.END)
             self.dec_text.insert(tk.END, decrypt(cipher, key))
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
-
 
 # ============================================================
 # ЗАПУСК
