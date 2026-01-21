@@ -22,3 +22,22 @@ def exp(x):
 
 def log(x):
     return LOG_TABLE[x]
+# ============================================================
+# ГЕНЕРАЦИЯ ПОДКЛЮЧЕЙ SAFER-K64
+# ============================================================
+
+def rotate_left(b: List[int], n=3):
+    return b[n:] + b[:n]
+
+def key_schedule(key: bytes, rounds=6):
+    if len(key) != 8:
+        raise ValueError("Ключ должен быть 8 байт")
+
+    keys = []
+    k = list(key)
+
+    for r in range(1, rounds + 1):
+        keys.append([(k[i] + r) % 256 for i in range(8)])
+        k = rotate_left(k)
+
+    return keys
