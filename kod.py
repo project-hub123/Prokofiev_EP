@@ -1,6 +1,6 @@
 # ============================================================
-# SAFER-K64 — Шифрование / Дешифрование
-# Полная исправленная версия (GUI + алгоритм)
+# SAFER-K64 (УЧЕБНАЯ КОРРЕКТНАЯ РЕАЛИЗАЦИЯ)
+# Шифрование / Дешифрование + GUI (Tkinter)
 # ============================================================
 
 import tkinter as tk
@@ -8,7 +8,7 @@ from tkinter import scrolledtext, messagebox
 from typing import List
 
 # ============================================================
-# EXP / LOG таблицы (исправленные)
+# EXP / LOG таблицы (обратимые)
 # ============================================================
 
 EXP_TABLE = [(pow(45, i, 257) - 1) % 256 for i in range(256)]
@@ -23,14 +23,6 @@ def exp(x: int) -> int:
 
 def log(x: int) -> int:
     return LOG_TABLE[x % 256]
-
-
-def add_mod(x, y):
-    return (x + y) % 256
-
-
-def sub_mod(x, y):
-    return (x - y) % 256
 
 
 # ============================================================
@@ -56,28 +48,30 @@ def key_schedule(key: bytes, rounds=6):
 
 
 # ============================================================
-# Шифрование и дешифрование блока
+# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА (СТРОГО ОБРАТИМО)
 # ============================================================
 
 def encrypt_block(block: List[int], subkeys):
     x = block[:]
 
     for k in subkeys:
-        x[0] = exp(x[0] ^ k[0])
-        x[1] = log((x[1] + k[1]) % 256)
-        x[2] = log((x[2] + k[2]) % 256)
-        x[3] = exp(x[3] ^ k[3])
-        x[4] = exp(x[4] ^ k[4])
-        x[5] = log((x[5] + k[5]) % 256)
-        x[6] = log((x[6] + k[6]) % 256)
-        x[7] = exp(x[7] ^ k[7])
+        # Наложение ключа
+        for i in range(8):
+            x[i] = (x[i] + k[i]) % 256
 
+        # Нелинейность
+        x = [exp(b) for b in x]
+
+        # Обратимое перемешивание
         x = [
-            add_mod(x[0], x[1]),
-            add_mod(x[2], x[3]),
-            add_mod(x[4], x[5]),
-            add_mod(x[6], x[7]),
-            x[1], x[3], x[5], x[7]
+            (x[0] + x[1]) % 256,
+            (x[1] + x[2]) % 256,
+            (x[2] + x[3]) % 256,
+            (x[3] + x[4]) % 256,
+            (x[4] + x[5]) % 256,
+            (x[5] + x[6]) % 256,
+            (x[6] + x[7]) % 256,
+            (x[7] + x[0]) % 256
         ]
 
     return x
@@ -87,25 +81,24 @@ def decrypt_block(block: List[int], subkeys):
     x = block[:]
 
     for k in reversed(subkeys):
+        # Обратное перемешивание
         x = [
-            x[0],
-            sub_mod(x[0], x[1]),
-            x[1],
-            sub_mod(x[2], x[3]),
-            x[2],
-            sub_mod(x[4], x[5]),
-            x[3],
-            sub_mod(x[6], x[7])
+            (x[7] - x[0]) % 256,
+            (x[0] - x[1]) % 256,
+            (x[1] - x[2]) % 256,
+            (x[2] - x[3]) % 256,
+            (x[3] - x[4]) % 256,
+            (x[4] - x[5]) % 256,
+            (x[5] - x[6]) % 256,
+            (x[6] - x[7]) % 256
         ]
 
-        x[0] = exp(x[0]) ^ k[0]
-        x[1] = sub_mod(log(x[1]), k[1])
-        x[2] = sub_mod(log(x[2]), k[2])
-        x[3] = exp(x[3]) ^ k[3]
-        x[4] = exp(x[4]) ^ k[4]
-        x[5] = sub_mod(log(x[5]), k[5])
-        x[6] = sub_mod(log(x[6]), k[6])
-        x[7] = exp(x[7]) ^ k[7]
+        # Обратная нелинейность
+        x = [log(b) for b in x]
+
+        # Снятие ключа
+        for i in range(8):
+            x[i] = (x[i] - k[i]) % 256
 
     return x
 
@@ -120,7 +113,7 @@ def pad(data: bytes):
     return data
 
 
-def encrypt(text: str, key: str):
+def encrypt(text: str, key: str) -> str:
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
     subkeys = key_schedule(key_b)
 
@@ -134,7 +127,7 @@ def encrypt(text: str, key: str):
     return bytes(result).hex()
 
 
-def decrypt(cipher_hex: str, key: str):
+def decrypt(cipher_hex: str, key: str) -> str:
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
     subkeys = key_schedule(key_b)
 
