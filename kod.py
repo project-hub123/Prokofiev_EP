@@ -41,3 +41,29 @@ def key_schedule(key: bytes, rounds=6):
         k = rotate_left(k)
 
     return keys
+# ============================================================
+# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА
+# ============================================================
+
+def encrypt_block(block: List[int], subkeys):
+    x = block[:]
+
+    for k in subkeys:
+        x[0] = exp(x[0] ^ k[0])
+        x[1] = log(x[1] + k[1])
+        x[2] = log(x[2] + k[2])
+        x[3] = exp(x[3] ^ k[3])
+        x[4] = exp(x[4] ^ k[4])
+        x[5] = log(x[5] + k[5])
+        x[6] = log(x[6] + k[6])
+        x[7] = exp(x[7] ^ k[7])
+
+        x = [
+            add_mod(x[0], x[1]),
+            add_mod(x[2], x[3]),
+            add_mod(x[4], x[5]),
+            add_mod(x[6], x[7]),
+            x[1], x[3], x[5], x[7]
+        ]
+
+    return x
