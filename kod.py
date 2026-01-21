@@ -93,4 +93,41 @@ def decrypt_block(block: List[int], subkeys):
         x[7] = exp(x[7]) ^ k[7]
 
     return x
+# ============================================================
+# ОБРАБОТКА ТЕКСТА
+# ============================================================
 
+def pad(data: bytes):
+    while len(data) % 8 != 0:
+        data += b'\x00'
+    return data
+
+def encrypt(text: str, key: str):
+    key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
+    subkeys = key_schedule(key_b)
+
+    data = pad(text.encode("utf-8"))
+    result = []
+
+    for i in range(0, len(data), 8):
+        block = list(data[i:i+8])
+        enc = encrypt_block(block, subkeys)
+        result.extend(enc)
+
+    return bytes(result).hex()
+
+def decrypt(cipher_hex: str, key: str):
+    key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
+    subkeys = key_schedule(key_b)
+
+    data = bytes.fromhex(cipher_hex)
+    result = []
+
+    for i in range(0, len(data), 8):
+        block = list(data[i:i+8])
+        dec = decrypt_block(block, subkeys)
+        result.extend(dec)
+
+    return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
+
+# ============================================================
