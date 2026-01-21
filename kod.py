@@ -1,5 +1,5 @@
 # ============================================================
-# SAFER-K64 (УЧЕБНАЯ КОРРЕКТНАЯ РЕАЛИЗАЦИЯ)
+# SAFER-K64 (УЧЕБНАЯ СТРОГО ОБРАТИМАЯ РЕАЛИЗАЦИЯ)
 # Шифрование / Дешифрование + GUI (Tkinter)
 # ============================================================
 
@@ -8,25 +8,17 @@ from tkinter import scrolledtext, messagebox
 from typing import List
 
 # ============================================================
-# EXP / LOG таблицы (обратимые)
+# ОБРАТИМАЯ S-BOX (вместо EXP/LOG)
 # ============================================================
 
-EXP_TABLE = [(pow(45, i, 257) - 1) % 256 for i in range(256)]
-LOG_TABLE = [0] * 256
-for i, v in enumerate(EXP_TABLE):
-    LOG_TABLE[v] = i
-
-
-def exp(x: int) -> int:
-    return EXP_TABLE[x % 256]
-
-
-def log(x: int) -> int:
-    return LOG_TABLE[x % 256]
+SBOX = [(i * 197 + 123) % 256 for i in range(256)]
+INV_SBOX = [0] * 256
+for i, v in enumerate(SBOX):
+    INV_SBOX[v] = i
 
 
 # ============================================================
-# Генерация подключей SAFER-K64
+# ГЕНЕРАЦИЯ ПОДКЛЮЧЕЙ
 # ============================================================
 
 def rotate_left(b: List[int], n=3):
@@ -34,13 +26,10 @@ def rotate_left(b: List[int], n=3):
 
 
 def key_schedule(key: bytes, rounds=6):
-    if len(key) != 8:
-        raise ValueError("Ключ должен быть длиной 8 байт")
-
     keys = []
     k = list(key)
 
-    for r in range(1, rounds + 1):
+    for r in range(rounds):
         keys.append([(k[i] + r) % 256 for i in range(8)])
         k = rotate_left(k)
 
@@ -48,21 +37,21 @@ def key_schedule(key: bytes, rounds=6):
 
 
 # ============================================================
-# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА (СТРОГО ОБРАТИМО)
+# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА
 # ============================================================
 
 def encrypt_block(block: List[int], subkeys):
     x = block[:]
 
     for k in subkeys:
-        # Наложение ключа
+        # наложение ключа
         for i in range(8):
             x[i] = (x[i] + k[i]) % 256
 
-        # Нелинейность
-        x = [exp(b) for b in x]
+        # нелинейность
+        x = [SBOX[b] for b in x]
 
-        # Обратимое перемешивание
+        # обратимое перемешивание
         x = [
             (x[0] + x[1]) % 256,
             (x[1] + x[2]) % 256,
@@ -81,7 +70,7 @@ def decrypt_block(block: List[int], subkeys):
     x = block[:]
 
     for k in reversed(subkeys):
-        # Обратное перемешивание
+        # обратное перемешивание
         x = [
             (x[7] - x[0]) % 256,
             (x[0] - x[1]) % 256,
@@ -93,10 +82,10 @@ def decrypt_block(block: List[int], subkeys):
             (x[6] - x[7]) % 256
         ]
 
-        # Обратная нелинейность
-        x = [log(b) for b in x]
+        # обратная нелинейность
+        x = [INV_SBOX[b] for b in x]
 
-        # Снятие ключа
+        # снятие ключа
         for i in range(8):
             x[i] = (x[i] - k[i]) % 256
 
@@ -104,7 +93,7 @@ def decrypt_block(block: List[int], subkeys):
 
 
 # ============================================================
-# Работа с текстом
+# РАБОТА С ТЕКСТОМ
 # ============================================================
 
 def pad(data: bytes):
@@ -121,8 +110,7 @@ def encrypt(text: str, key: str) -> str:
     result = []
 
     for i in range(0, len(data), 8):
-        block = list(data[i:i + 8])
-        result.extend(encrypt_block(block, subkeys))
+        result.extend(encrypt_block(list(data[i:i + 8]), subkeys))
 
     return bytes(result).hex()
 
@@ -135,14 +123,13 @@ def decrypt(cipher_hex: str, key: str) -> str:
     result = []
 
     for i in range(0, len(data), 8):
-        block = list(data[i:i + 8])
-        result.extend(decrypt_block(block, subkeys))
+        result.extend(decrypt_block(list(data[i:i + 8]), subkeys))
 
     return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
 
 
 # ============================================================
-# GUI
+# GUI (ВСТАВКА ВО ВСЕ ПОЛЯ РАЗРЕШЕНА)
 # ============================================================
 
 class SAFERApp:
@@ -174,37 +161,36 @@ class SAFERApp:
 
     def encrypt(self):
         try:
-            key = self.key_entry.get()
-            if not key:
-                raise ValueError("Введите ключ")
-
-            text = self.input_text.get("1.0", tk.END).rstrip()
-            if not text:
-                raise ValueError("Введите открытый текст")
-
             self.enc_text.delete("1.0", tk.END)
+            self.dec_text.delete("1.0", tk.END)
+
+            key = self.key_entry.get()
+            text = self.input_text.get("1.0", tk.END).rstrip()
+
+            if not key or not text:
+                raise ValueError("Ключ и текст должны быть заполнены")
+
             self.enc_text.insert(tk.END, encrypt(text, key))
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
     def decrypt(self):
         try:
-            key = self.key_entry.get()
-            if not key:
-                raise ValueError("Введите ключ")
-
-            cipher = self.enc_text.get("1.0", tk.END).strip()
-            if not cipher:
-                raise ValueError("Введите зашифрованный текст")
-
             self.dec_text.delete("1.0", tk.END)
+
+            key = self.key_entry.get()
+            cipher = self.enc_text.get("1.0", tk.END).strip()
+
+            if not key or not cipher:
+                raise ValueError("Ключ и зашифрованный текст должны быть заполнены")
+
             self.dec_text.insert(tk.END, decrypt(cipher, key))
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
 
 # ============================================================
-# Запуск
+# ЗАПУСК
 # ============================================================
 
 if __name__ == "__main__":
