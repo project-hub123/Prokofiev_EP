@@ -67,3 +67,30 @@ def encrypt_block(block: List[int], subkeys):
         ]
 
     return x
+
+def decrypt_block(block: List[int], subkeys):
+    x = block[:]
+
+    for k in reversed(subkeys):
+        x = [
+            x[0],
+            sub_mod(x[0], x[1]),
+            x[1],
+            sub_mod(x[2], x[3]),
+            x[2],
+            sub_mod(x[4], x[5]),
+            x[3],
+            sub_mod(x[6], x[7])
+        ]
+
+        x[0] = exp(x[0]) ^ k[0]
+        x[1] = sub_mod(log(x[1]), k[1])
+        x[2] = sub_mod(log(x[2]), k[2])
+        x[3] = exp(x[3]) ^ k[3]
+        x[4] = exp(x[4]) ^ k[4]
+        x[5] = sub_mod(log(x[5]), k[5])
+        x[6] = sub_mod(log(x[6]), k[6])
+        x[7] = exp(x[7]) ^ k[7]
+
+    return x
+
