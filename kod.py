@@ -131,3 +131,59 @@ def decrypt(cipher_hex: str, key: str):
     return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
 
 # ============================================================
+# GUI
+# ============================================================
+
+class SAFERApp:
+    def __init__(self, root):
+        root.title("SAFER-K64 — Шифрование / Дешифрование")
+        root.geometry("900x600")
+
+        tk.Label(root, text="Ключ (до 8 символов):").pack()
+        self.key_entry = tk.Entry(root, width=40)
+        self.key_entry.pack()
+
+        tk.Label(root, text="Открытый текст:").pack()
+        self.input_text = scrolledtext.ScrolledText(root, height=8)
+        self.input_text.pack(fill=tk.BOTH, padx=10)
+
+        tk.Label(root, text="Зашифрованный текст (HEX):").pack()
+        self.enc_text = scrolledtext.ScrolledText(root, height=8)
+        self.enc_text.pack(fill=tk.BOTH, padx=10)
+
+        tk.Label(root, text="Расшифрованный текст:").pack()
+        self.dec_text = scrolledtext.ScrolledText(root, height=8)
+        self.dec_text.pack(fill=tk.BOTH, padx=10)
+
+        frame = tk.Frame(root)
+        frame.pack(pady=10)
+
+        tk.Button(frame, text="Зашифровать", width=20, command=self.encrypt).pack(side=tk.LEFT, padx=5)
+        tk.Button(frame, text="Расшифровать", width=20, command=self.decrypt).pack(side=tk.LEFT, padx=5)
+
+    def encrypt(self):
+        try:
+            key = self.key_entry.get()
+            text = self.input_text.get("1.0", tk.END).strip()
+            self.enc_text.delete("1.0", tk.END)
+            self.enc_text.insert(tk.END, encrypt(text, key))
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+
+    def decrypt(self):
+        try:
+            key = self.key_entry.get()
+            cipher = self.enc_text.get("1.0", tk.END).strip()
+            self.dec_text.delete("1.0", tk.END)
+            self.dec_text.insert(tk.END, decrypt(cipher, key))
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    SAFERApp(root)
+    root.mainloop()
