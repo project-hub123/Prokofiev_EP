@@ -1,9 +1,14 @@
+# ============================================================
+# SAFER-K64 — Шифрование / Дешифрование
+# Полная исправленная версия (GUI + алгоритм)
+# ============================================================
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 from typing import List
 
 # ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ ТАБЛИЦЫ
+# EXP / LOG таблицы (исправленные)
 # ============================================================
 
 EXP_TABLE = [(pow(45, i, 257) - 1) % 256 for i in range(256)]
@@ -11,27 +16,34 @@ LOG_TABLE = [0] * 256
 for i, v in enumerate(EXP_TABLE):
     LOG_TABLE[v] = i
 
+
+def exp(x: int) -> int:
+    return EXP_TABLE[x % 256]
+
+
+def log(x: int) -> int:
+    return LOG_TABLE[x % 256]
+
+
 def add_mod(x, y):
     return (x + y) % 256
+
 
 def sub_mod(x, y):
     return (x - y) % 256
 
-def exp(x):
-    return EXP_TABLE[x]
 
-def log(x):
-    return LOG_TABLE[x]
 # ============================================================
-# ГЕНЕРАЦИЯ ПОДКЛЮЧЕЙ SAFER-K64
+# Генерация подключей SAFER-K64
 # ============================================================
 
 def rotate_left(b: List[int], n=3):
     return b[n:] + b[:n]
 
+
 def key_schedule(key: bytes, rounds=6):
     if len(key) != 8:
-        raise ValueError("Ключ должен быть 8 байт")
+        raise ValueError("Ключ должен быть длиной 8 байт")
 
     keys = []
     k = list(key)
@@ -41,8 +53,10 @@ def key_schedule(key: bytes, rounds=6):
         k = rotate_left(k)
 
     return keys
+
+
 # ============================================================
-# ШИФРОВАНИЕ / ДЕШИФРОВАНИЕ БЛОКА
+# Шифрование и дешифрование блока
 # ============================================================
 
 def encrypt_block(block: List[int], subkeys):
@@ -50,12 +64,12 @@ def encrypt_block(block: List[int], subkeys):
 
     for k in subkeys:
         x[0] = exp(x[0] ^ k[0])
-        x[1] = log(x[1] + k[1])
-        x[2] = log(x[2] + k[2])
+        x[1] = log((x[1] + k[1]) % 256)
+        x[2] = log((x[2] + k[2]) % 256)
         x[3] = exp(x[3] ^ k[3])
         x[4] = exp(x[4] ^ k[4])
-        x[5] = log(x[5] + k[5])
-        x[6] = log(x[6] + k[6])
+        x[5] = log((x[5] + k[5]) % 256)
+        x[6] = log((x[6] + k[6]) % 256)
         x[7] = exp(x[7] ^ k[7])
 
         x = [
@@ -67,6 +81,7 @@ def encrypt_block(block: List[int], subkeys):
         ]
 
     return x
+
 
 def decrypt_block(block: List[int], subkeys):
     x = block[:]
@@ -93,14 +108,17 @@ def decrypt_block(block: List[int], subkeys):
         x[7] = exp(x[7]) ^ k[7]
 
     return x
+
+
 # ============================================================
-# ОБРАБОТКА ТЕКСТА
+# Работа с текстом
 # ============================================================
 
 def pad(data: bytes):
     while len(data) % 8 != 0:
         data += b'\x00'
     return data
+
 
 def encrypt(text: str, key: str):
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
@@ -110,11 +128,11 @@ def encrypt(text: str, key: str):
     result = []
 
     for i in range(0, len(data), 8):
-        block = list(data[i:i+8])
-        enc = encrypt_block(block, subkeys)
-        result.extend(enc)
+        block = list(data[i:i + 8])
+        result.extend(encrypt_block(block, subkeys))
 
     return bytes(result).hex()
+
 
 def decrypt(cipher_hex: str, key: str):
     key_b = key.encode("utf-8")[:8].ljust(8, b'\x00')
@@ -124,11 +142,11 @@ def decrypt(cipher_hex: str, key: str):
     result = []
 
     for i in range(0, len(data), 8):
-        block = list(data[i:i+8])
-        dec = decrypt_block(block, subkeys)
-        result.extend(dec)
+        block = list(data[i:i + 8])
+        result.extend(decrypt_block(block, subkeys))
 
     return bytes(result).rstrip(b'\x00').decode("utf-8", errors="ignore")
+
 
 # ============================================================
 # GUI
@@ -164,7 +182,13 @@ class SAFERApp:
     def encrypt(self):
         try:
             key = self.key_entry.get()
-            text = self.input_text.get("1.0", tk.END).strip()
+            if not key:
+                raise ValueError("Введите ключ")
+
+            text = self.input_text.get("1.0", tk.END).rstrip()
+            if not text:
+                raise ValueError("Введите открытый текст")
+
             self.enc_text.delete("1.0", tk.END)
             self.enc_text.insert(tk.END, encrypt(text, key))
         except Exception as e:
@@ -173,14 +197,21 @@ class SAFERApp:
     def decrypt(self):
         try:
             key = self.key_entry.get()
+            if not key:
+                raise ValueError("Введите ключ")
+
             cipher = self.enc_text.get("1.0", tk.END).strip()
+            if not cipher:
+                raise ValueError("Введите зашифрованный текст")
+
             self.dec_text.delete("1.0", tk.END)
             self.dec_text.insert(tk.END, decrypt(cipher, key))
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
+
 # ============================================================
-# ЗАПУСК
+# Запуск
 # ============================================================
 
 if __name__ == "__main__":
